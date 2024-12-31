@@ -145,11 +145,11 @@ export default function Map(props: Props): JSX.Element {
         if (!neighbToFind) {
           return
         }
-        if (d.properties.name !== selected) {
-          return setSelected(d.properties.name);
+        if (d.properties.name !== neighbToFind) {
+          setMissed((misses) => misses.concat(neighbToFind));
         }
         else {
-          setMissed((misses) => misses.concat(neighbToFind));
+          setSelected(d.properties.name);
         }
         if (svg.current) {
           svg.current.selectAll('path').on('mouseover', function() {
