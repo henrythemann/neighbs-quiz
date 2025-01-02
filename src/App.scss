@@ -5,7 +5,7 @@ html {
 
 body {
     height:100%;
-    background-color: #fff;
+    background-color: #9b8984;
     color: #333;
     font: 1.2em / 1.5 Helvetica Neue, Helvetica, Arial, sans-serif;
     padding: 0;
@@ -16,9 +16,30 @@ body {
     box-sizing: inherit;
 }
 
+button {
+  background-color: #00000000;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  text-align: center;
+  text-decoration: none;
+  font-size: 16px;
+  margin: 4rem 0.25rem;
+  cursor: pointer;
+  border-radius: 0.75rem;
+  border: 1px solid black;
+  transition: background-color 0.3s;
+}
+button:hover {
+  background-color: rgb(221, 203, 180);
+  color: black;
+}
+path:hover {
+  cursor: pointer;
+}
+
 .App {
   text-align: center;
-  padding-top: 30px;
 }
 
 .App-logo {
@@ -56,3 +77,4 @@ body {
     padding: 1em 3em;
   }
 }
+
