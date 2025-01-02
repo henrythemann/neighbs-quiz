@@ -24,8 +24,6 @@ interface Props {
   isQuiz: boolean
   location: any
   userNeighb: string
-  isGeolocationEnabled?: boolean
-  isGeolocationAvailable?: boolean
 }
 
 interface Feature {
@@ -53,24 +51,8 @@ skip
 */
 export default function Map(props: Props): JSX.Element {
 
-  const { missed, setMissed, userNeighb, neighbToFind, setNeighb, allNeighbs, setAllNeighbs, selected, setSelected, isQuiz, isGeolocationEnabled, isGeolocationAvailable } = props;
+  const { missed, setMissed, userNeighb, neighbToFind, setNeighb, allNeighbs, setAllNeighbs, selected, setSelected, isQuiz } = props;
   const rootRef = useMemo(() => createRef<HTMLDivElement>(), []);
-
-  // const { latitude: lat, longitude: lon, accuracy } = isQuiz ? {latitude: 0, longitude: 0, accuracy: 0} : props.coords || {};
-  // useEffect(
-  //   () => {
-  //     if (lat && lon) {
-  //       const neighb = data.find((d) => insidePolygon(
-  //         toLatLon({lat, lon}), 
-  //         d['the_geom'].map(([lat, lon]) => ({ lat, lon })))
-  //       );
-  //       if (neighb) {
-  //         setUserNeighb(neighb.name);
-  //       }
-  //     }
-  //   },
-  //   [lat, lon]
-  // );
 
   let svg = useRef<Selection<SVGSVGElement, unknown, null, undefined>>();
 
@@ -180,7 +162,17 @@ export default function Map(props: Props): JSX.Element {
     }
 
     function eventHandler(this: any, d: any) {
-      if (!neighbToFind || !isQuiz) {
+      if (!isQuiz) {
+        const newTab = window.open(
+          `https://www.google.com/search?q=${d.properties.name || ''}+neighborhood+san+francisco`,
+          '_blank'
+        );
+        if (newTab) {
+          newTab.focus();
+        }
+        return;
+      } else {
+      if (!neighbToFind) {
         return
       }
       if (d.properties.name !== neighbToFind) {
@@ -196,8 +188,7 @@ export default function Map(props: Props): JSX.Element {
       }
       setSelected("");
       nextNeighb();
-    }
-
+    }}
     d3.selectAll<HTMLElement, Feature>('path')
       .on('click', (d) => [...allNeighbs, neighbToFind].includes(d.properties.name) ? eventHandler(d) : null);
   },
@@ -277,24 +268,6 @@ export default function Map(props: Props): JSX.Element {
       <span>Having trouble? <Link to={'/location'}>Quit the quiz and learn the neighbs</Link></span>
     </div>
   )
-
-  function PleaseEnableGeo() {
-    return <div>
-      <span>Please enable geolocation to find your location in the city.</span>
-    </div>
-  }
-
-  function CurrentNeighb({ neighb }: { neighb: string }) {
-    return <div>
-      <span>Current neighborhood {neighb}</span>
-    </div>
-  }
-
-  function GeolocationIsNotEnabled() {
-    return (<div>
-      <span>Geolocation is not available.</span>
-    </div>)
-  }
 
   return (
     <div>
