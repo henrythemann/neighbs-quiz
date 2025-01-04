@@ -34,6 +34,12 @@ button:hover {
   background-color: rgb(221, 203, 180);
   color: black;
 }
+path {
+  transition: fill 0.1s;
+}
+path[quizzable="false"]:hover {
+   cursor: default;
+} 
 path:hover {
   cursor: pointer;
 }

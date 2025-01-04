@@ -1,5 +1,4 @@
 import React, { useState } from 'react'
-import data from './geojson.json';
 import shuffle from './shuffle';
 
 // Hook
@@ -44,7 +43,13 @@ function useLocalStorage<T>(key: string, initialValue: T) {
 }
 
 
-export default function MapContainer({ children: Children }: any) : JSX.Element {
+export default function MapContainer({ mapName, children: Children }: any) : JSX.Element {
+  let data = {features: []};
+  if (mapName === 'bay')
+    data = require('./bayGeojson.json');
+  else if (mapName === 'sf')
+    data = require('./sfGeojson.json');
+
   const [missed, setMissed] = useLocalStorage<string[]>("missed", []);
   const [neighbToFind, setNeighb] = useLocalStorage<string>("neighbToFind", "");
   const [allNeighbs, setAllNeighbs] = useLocalStorage<string[]>("allNeighbs", shuffle(data.features.map((d) => d.properties.name)));

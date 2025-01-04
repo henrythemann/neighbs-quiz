@@ -18,7 +18,7 @@ const App: React.FC = () => {
       <div className="App">
         <div className="wrapper">
           <Switch>
-            <Route path="/:quiz">
+            <Route path="/:map/:quiz">
               <Geolocated />
             </Route>
           </Switch>

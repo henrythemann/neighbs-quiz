@@ -3,14 +3,16 @@ import * as d3 from 'd3';
 import { Selection, event, BaseType } from 'd3';
 import { geoMercator, geoPath } from 'd3-geo';
 import { Link } from 'react-router-dom';
-import data from './geojson.json';
 import ListItem from './ListItem';
 import shuffle from './shuffle';
 
 const DEFAULT_FILL = 'rgb(175, 157, 150)';
+const DARK_FILL = '#a4928b';
+const HIGHLIGHT_FILL = '#c2afa7';
 const WRONG_FILL = '#a72416';
 const CORRECT_FILL = '#216421';
 const STROKE_COLOR = '#222';
+const OCEAN_FILL = 'rgb(116, 109, 120)';
 
 interface Props {
   missed: string[]
@@ -24,6 +26,7 @@ interface Props {
   isQuiz: boolean
   location: any
   userNeighb: string
+  mapName: string
 }
 
 interface Feature {
@@ -51,7 +54,19 @@ skip
 */
 export default function Map(props: Props): JSX.Element {
 
-  const { missed, setMissed, userNeighb, neighbToFind, setNeighb, allNeighbs, setAllNeighbs, selected, setSelected, isQuiz } = props;
+  const { missed, setMissed, userNeighb, neighbToFind, setNeighb, allNeighbs, setAllNeighbs, selected, setSelected, isQuiz, mapName } = props;
+  let data = {features: []};
+  let areaName = '';
+  let quizType = '';
+  if (mapName === 'bay') {
+    data = require('./bayGeojson.json');
+    areaName = 'the Bay';
+    quizType = 'Bay Area cities';
+  } else if (mapName === 'sf') {
+    data = require('./sfGeojson.json');
+    areaName = 'SF';
+    quizType = 'neighborhoods';
+  }
   const rootRef = useMemo(() => createRef<HTMLDivElement>(), []);
 
   let svg = useRef<Selection<SVGSVGElement, unknown, null, undefined>>();
@@ -59,13 +74,14 @@ export default function Map(props: Props): JSX.Element {
   const tooltipRef = useRef() as React.MutableRefObject<HTMLInputElement>;
   const applyMouseover = useCallback((el: Selection<d3.BaseType, {}, null, undefined>, text: string | ((d: any) => string)) => {
     return el.on("mousemove", function (d: any) {
-      if (tooltipRef.current) {
+      if (tooltipRef.current && el._groups[0][0].attributes['quizzable'].value == 'true') {
         tooltipRef.current.style.top = (event.pageY + 20) + "px";
         tooltipRef.current.style.left = (event.pageX) + "px";
         tooltipRef.current.style.visibility = 'visible';
         tooltipRef.current.style.backgroundColor = '#ffffffcc';
-        tooltipRef.current.style.padding = '0.5rem 1rem'
-        tooltipRef.current.style.borderRadius = '1rem'
+        tooltipRef.current.style.padding = '0.5rem 1rem';
+        tooltipRef.current.style.borderRadius = '1rem';
+        tooltipRef.current.style.userSelect = 'none';
         tooltipRef.current.innerHTML = typeof text === 'function' ? text(d) : text;
       }
     })
@@ -92,7 +108,7 @@ export default function Map(props: Props): JSX.Element {
     setNeighb(newArrangement[0])
     setMissed([]);
 
-    d3.selectAll('svg path').style("fill", DEFAULT_FILL).style("stroke", STROKE_COLOR);
+    d3.selectAll('svg path').style("fill", (d: { properties: { not_quizzable: boolean; }; }) => d.properties.not_quizzable ? DARK_FILL : DEFAULT_FILL).style("stroke", STROKE_COLOR);
     removeTooltips();
     }
   }, [removeTooltips, setNeighb, setAllNeighbs, setMissed])
@@ -149,7 +165,7 @@ export default function Map(props: Props): JSX.Element {
   useEffect(() => {
     if (!isQuiz) {
       d3.selectAll<BaseType, Feature>('svg path').each(function (el) {
-        d3.select(this).style('fill', DEFAULT_FILL).style('opacity', 1)
+        d3.select(this).style("fill", (d: { properties: { not_quizzable: boolean; }; }) => d.properties.not_quizzable ? DARK_FILL : DEFAULT_FILL).style('opacity', 1)
       }
       );
     }
@@ -219,7 +235,7 @@ export default function Map(props: Props): JSX.Element {
       .attr("vector-effect", "non-scaling-stroke")
       .attr("stroke-width", .000003)
       .attr("stroke", STROKE_COLOR)
-      .attr('style', 'max-height: 95vh; max-width: 90vw;');
+      .attr('style', `max-height: 95vh; max-width: 90vw; background-color: ${OCEAN_FILL}; border-radius: 3rem`);
 
     const transl: [number, number] = [-x0, -y0];
     projection
@@ -233,18 +249,22 @@ export default function Map(props: Props): JSX.Element {
       .attr("d", path as any)
       .attr('data-id', (d: any) => d.id)
       .attr('data-name', (d: { properties: { name: string; }; }) => d.properties.name)
+      .attr('quizzable', (d: { properties: { not_quizzable: boolean; }; }) => !d.properties.not_quizzable)
       .attr('id', (d: { properties: { name: string; }; }) => d.properties.name)
       .attr('pointer-events', 'all')
-      .style("fill", DEFAULT_FILL).style("stroke", STROKE_COLOR);
+      .style("fill", (d: { properties: { not_quizzable: boolean; }; }) => d.properties.not_quizzable ? DARK_FILL : DEFAULT_FILL).style("stroke", STROKE_COLOR);
 
     svg.current.selectAll('path').on('mouseover', function () {
-      d3.select(this).style('opacity', 0.5);
+      if (this.attributes['quizzable'].value === 'true')
+        d3.select(this).style('fill', HIGHLIGHT_FILL);
     });
     svg.current.selectAll('path').on('touchend', function () {
-      d3.select(this).style('opacity', 1);
+      if (this.attributes['quizzable'].value === 'true')
+        d3.select(this).style('fill', DEFAULT_FILL);
     });
     svg.current.selectAll('path').on('mouseleave', function () {
-      d3.select(this).style('opacity', 1);
+      if (this.attributes['quizzable'].value === 'true')
+        d3.select(this).style('fill', DEFAULT_FILL);
     });
   },
     [rootRef]
@@ -265,7 +285,7 @@ export default function Map(props: Props): JSX.Element {
 
   const BottomRow = () => (
     <div className="pure-u-1 pure-u-md-1-3" style={{ marginTop: '1rem' }}>
-      <span>Having trouble? <Link to={'/location'}>Quit the quiz and learn the neighbs</Link></span>
+      <span>Having trouble? <Link to={`/${mapName}/location`}>Quit the quiz and learn the neighbs</Link></span>
     </div>
   )
 
@@ -274,7 +294,7 @@ export default function Map(props: Props): JSX.Element {
       {!isQuiz && (
         <>
           <div>
-            <span>Think you know SF well? <Link to="/quiz">Take our neighborhood quiz</Link></span>
+            <span>Think you know {areaName}? <Link to={`/${mapName}/quiz`}>Take our {quizType} quiz</Link></span>
           </div>
         </>
       )}

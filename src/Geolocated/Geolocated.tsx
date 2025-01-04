@@ -27,6 +27,7 @@ function GeolocationIsNotEnabled() {
 function Geolocated(props: any) {
   const params: any = useParams();
   const isQuiz = params && params.quiz === 'quiz';
+  const mapName = params && params.map ? params.map : 'map';
   const [userNeighb, setUserNeighb] = useState<string>();
   const { latitude: lat, longitude: lon, accuracy } = props.coords || {};
   useEffect(
@@ -53,8 +54,8 @@ function Geolocated(props: any) {
           {userNeighb && <CurrentNeighb neighb={userNeighb} />}
         </>
       )}
-      <MapContainer >
-        {(props: any) => <Map {...{ ...props, isQuiz: isQuiz, location: { lat, lon, accuracy }, userNeighb: userNeighb }} />}
+      <MapContainer mapName={mapName}>
+        {(props: any) => <Map {...{ ...props, isQuiz, mapName, location: { lat, lon, accuracy }, userNeighb }} />}
       </MapContainer>
       <hr />
       <details className="credits">
