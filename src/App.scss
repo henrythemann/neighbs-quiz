@@ -1,3 +1,13 @@
+$DEFAULT_FILL: rgb(164, 147, 140);
+$DARK_FILL: hsl(17, 8%, 49%);
+$HIGHLIGHT_FILL: #c2afa7;
+$WRONG_FILL: #a72416;
+$CORRECT_FILL: #216421;
+$STROKE_COLOR: #222;
+$OCEAN_FILL: rgb(100, 95, 103);
+$BUTTON_HIGHLIGHT: rgb(149, 119, 167);
+$BUTTON_HIGHLIGHT_HOVER: rgb(181, 144, 201);
+
 html {
     height:100%;
     box-sizing: border-box;
@@ -5,8 +15,8 @@ html {
 
 body {
     height:100%;
-    background-color: #9b8984;
-    color: #333;
+    background-color: #4d4341;
+    color: #ddd;
     font: 1.2em / 1.5 Helvetica Neue, Helvetica, Arial, sans-serif;
     padding: 0;
     margin: 0;
@@ -16,32 +26,99 @@ body {
     box-sizing: inherit;
 }
 
-button {
+body button {
   background-color: #00000000;
-  color: white;
   border: none;
-  padding: 0.5rem 1rem;
   text-align: center;
   text-decoration: none;
+  user-select: none;
+  cursor: pointer;
+  color: $BUTTON_HIGHLIGHT;
+  transition: color 0.3s;
+}
+body a {
+  color: $BUTTON_HIGHLIGHT;
+  text-decoration: none;
+  transition: color 0.3s;
+}
+body a:hover, body button:hover {
+  color: $BUTTON_HIGHLIGHT_HOVER;
+}
+button.styledButton {
+  color: white;
+  padding: 0.5rem 1rem;
   font-size: 16px;
   margin: 4rem 0.25rem;
-  cursor: pointer;
   border-radius: 0.75rem;
   border: 1px solid black;
   transition: background-color 0.3s;
 }
-button:hover {
+button.styledButton:hover {
   background-color: rgb(221, 203, 180);
   color: black;
+}
+svg {
+  background-color: $OCEAN_FILL;
 }
 path {
   transition: fill 0.1s;
 }
-path[quizzable="false"]:hover {
-   cursor: default;
+path[data-quizzable="false"] {
+  pointer-events: none;
+  fill: $DARK_FILL;
+} 
+svg[data-is-quiz="true"] path[data-quizzable="true"] {
+  fill: $DEFAULT_FILL;
+} 
+svg[data-is-quiz="true"] path[data-quizzable="true"]:hover {
+  fill: $HIGHLIGHT_FILL;
+}
+svg[data-is-quiz="true"] path[data-quizzable="true"][data-guessed="true"][data-correct="true"] {
+  fill: $CORRECT_FILL;
+}
+svg[data-is-quiz="true"] path[data-quizzable="true"][data-guessed="true"][data-correct="false"] {
+  fill: $WRONG_FILL;
+}
+svg[data-is-quiz="false"] path[data-quizzable="true"] {
+  fill: $DEFAULT_FILL;
+}
+svg[data-is-quiz="false"] path[data-quizzable="true"]:hover {
+  fill: $HIGHLIGHT_FILL;
 } 
 path:hover {
   cursor: pointer;
+}
+.prompt {
+  position: absolute;
+  top: -1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.prompt h1 {
+  margin: .25rem 0;
+  background-color: #00000099;
+  padding: 0rem 1rem;
+  border-radius: 0.5rem;
+}
+@media (max-width: 640px)  {
+  .prompt h1 {
+    font-size: 1rem;
+    padding: 0rem 0.5rem;
+    border-radius: 0.25rem;
+  }
+}
+.map-wrapper {
+  position: relative;
+  margin-top: 1rem;
+}
+
+#tooltip {
+  background-color: #ffffffcc;
+  color: #333;
+  padding: 0.5rem 1rem;
+  border-radius: 1rem;
+  user-select: none;
 }
 
 .App {

@@ -2,7 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Route, Switch, Redirect } from 'react-router-dom';
 import './App.scss';
 import 'purecss';
-import Map from './Map';
+import MapPage from './MapPage';
 import Geolocated from './Geolocated/Geolocated';
 
 if (process.env.NODE_ENV === 'production') {
