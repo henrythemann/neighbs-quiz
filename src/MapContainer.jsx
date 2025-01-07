@@ -1,37 +1,85 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import shuffle from './shuffle';
+import { useParams } from 'react-router-dom';
 import Dexie from 'dexie';
-const bayData = require('./bayGeojson.json');
-const sfData = require('./sfGeojson.json');
+import bayData from './bayGeojson.json';
+import sfData from './sfGeojson.json';
+import MapPage from './MapPage';
 
 export const db = new Dexie('quizDatabase');
 db.version(1).stores({
   quizIndex: 'id, quizIndex',
-  // allPlacesMap: 'name, guessed, missed',
+  allPlacesMap: 'id, value',
   allPlacesNames: 'id, names'
 });
 
-export function MapContainer({ mapName, children: Children }) {
-  const [data, setData] = useState(mapName === 'bay' ? bayData : sfData);
-  const [quizIndex, setQuizIndex] = useState(0);
-  const [allPlacesNames, setAllPlacesNames] = useState(shuffle(data.features.map((d) => d.properties.name)));
-  const [allPlacesMap, setAllPlacesMap] = useState(new Map());
+export const replacer = (key, value) => {
+  if (value instanceof Map) {
+    return {
+      dataType: 'Map',
+      value: Array.from(value.entries()),
+    };
+  } else {
+    return value;
+  }
+}
+export const reviver = (key, value) => {
+  if (typeof value === 'object' && value !== null) {
+    if (value.dataType === 'Map') {
+      return new Map(value.value);
+    }
+  }
+  return value;
+}
 
+export const getNewShuffledNames = (data) => {
+  return shuffle(data.features
+    .filter((d) => !d.properties?.not_quizzable)
+    .map((d) => d.properties.name));
+}
+export function MapContainer() {
+  const [quizIndex, setQuizIndex] = useState(0);
+  const [allPlacesNames, setAllPlacesNames] = useState([]);
+  const [allPlacesMap, setAllPlacesMap] = useState(new Map());
+  const [numCorrect, setNumCorrect] = useState(0);
+  const params = useParams();
+  const isQuiz = params && params.quiz === 'quiz';
+  const mapName = params && params.map ? params.map : 'map';
+  const [data, setData] = useState(mapName === 'bay' ? bayData : sfData);
+  // data
   React.useEffect(() => {
     if (mapName === 'sf') {
       setData(sfData);
-      setAllPlacesNames(shuffle(sfData.features.map((d) => d.properties.name)));
-      setAllPlacesMap(new Map());
+      setAllPlacesNames(getNewShuffledNames(sfData));
     } else if (mapName === 'bay') {
       setData(bayData);
-      setAllPlacesNames(shuffle(bayData.features.map((d) => d.properties.name)));
-      setAllPlacesMap(new Map());
+      setAllPlacesNames(getNewShuffledNames(bayData));
     }
+    setAllPlacesMap(new Map());
   }, [mapName])
-  
 
   React.useEffect(() => {
     const f = async () => {
+      // allPlacesMap
+      const dbAllPlacesMap = await db.allPlacesMap.get(mapName);
+      if (dbAllPlacesMap === undefined) {
+        db.allPlacesMap.put({
+          value: JSON.stringify(allPlacesMap, replacer),
+          id: mapName
+        })
+      } else {
+        const tempMap = JSON.parse(dbAllPlacesMap.value, reviver);
+        setAllPlacesMap(tempMap);
+        let numCorrectTemp = 0;
+        for (let [key, value] of tempMap) {
+          if (value.missed === false && value.guessed === true) {
+            numCorrectTemp++;
+          }
+        }
+        setNumCorrect(numCorrectTemp);
+      }
+
+      // quizIndex
       const dbQuizIndex = await db.quizIndex.get(mapName);
       if (dbQuizIndex === undefined) {
         db.quizIndex.put({
@@ -41,11 +89,8 @@ export function MapContainer({ mapName, children: Children }) {
       } else {
         setQuizIndex(dbQuizIndex.quizIndex);
       }
-    }
-    f();
-  }, [])
-  React.useEffect(() => {
-    const f = async () => {
+
+      // allPlacesNames
       const dbAllPlacesNames = await db.allPlacesNames.get(mapName);
       if (dbAllPlacesNames === undefined) {
         db.allPlacesNames.put({
@@ -57,26 +102,12 @@ export function MapContainer({ mapName, children: Children }) {
       }
     }
     f();
-  }, [])
-  
-  const props = { data, allPlacesNames, setAllPlacesNames, allPlacesMap, setAllPlacesMap, quizIndex, setQuizIndex }
+  }, [mapName])
+
+  const props = { data, db, allPlacesNames, setAllPlacesNames, allPlacesMap, setAllPlacesMap, quizIndex, setQuizIndex, numCorrect, setNumCorrect, mapName, isQuiz }
   return (
-    <Children
+    <MapPage
       {...props}
     />
   )
-  // return <div>
-  //   <h1>{quizIndex}</h1>
-  //   <h1>{allPlacesNames[quizIndex]}</h1>
-  //   <button onClick={() => db.quizIndex.clear()}>clear</button>
-  //   <button onClick={() => {
-  //     setQuizIndex(quizIndex + 1);
-  //     db.quizIndex.put(
-  //       {
-  //         quizIndex: quizIndex + 1,
-  //         id: 1
-  //       }
-  //     )
-  //   }}>increment</button>
-  // </div>
 }

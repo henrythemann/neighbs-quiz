@@ -35,27 +35,26 @@ body button {
   cursor: pointer;
   color: $BUTTON_HIGHLIGHT;
   transition: color 0.3s;
+  font-size: 1.2rem;
+}
+.lg-styled-button {
+  font-size: 2rem;
+  font-weight: bold;
+  background-color: #00000055;
+  border-radius: 9999px;
+  padding: 0.5rem 1.5rem;
+}
+.lg-styled-button:hover {
+  background-color: #00000077;
 }
 body a {
   color: $BUTTON_HIGHLIGHT;
   text-decoration: none;
   transition: color 0.3s;
 }
-body a:hover, body button:hover {
+body a:hover,
+body button:hover {
   color: $BUTTON_HIGHLIGHT_HOVER;
-}
-button.styledButton {
-  color: white;
-  padding: 0.5rem 1rem;
-  font-size: 16px;
-  margin: 4rem 0.25rem;
-  border-radius: 0.75rem;
-  border: 1px solid black;
-  transition: background-color 0.3s;
-}
-button.styledButton:hover {
-  background-color: rgb(221, 203, 180);
-  color: black;
 }
 svg {
   background-color: $OCEAN_FILL;
@@ -94,6 +93,7 @@ path:hover {
   left: 50%;
   transform: translateX(-50%);
   pointer-events: none;
+  z-index: 10;
 }
 .prompt h1 {
   margin: .25rem 0;
@@ -101,18 +101,52 @@ path:hover {
   padding: 0rem 1rem;
   border-radius: 0.5rem;
 }
-@media (max-width: 640px)  {
-  .prompt h1 {
-    font-size: 1rem;
-    padding: 0rem 0.5rem;
-    border-radius: 0.25rem;
-  }
-}
 .map-wrapper {
   position: relative;
   margin-top: 1rem;
 }
+.map-component {
+  max-height: 90vh;
+  max-width: 90vw;
+  border-radius: 3rem;
+  margin: "auto";
+}
+.map-overlay {
+  position: absolute;
+  background-color: #00000099;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  aspect-ratio: 1;
+  height: 0;
+  padding-bottom: calc(min(90%, 90vh));
+  border-radius: 3rem;
+  max-height: 90vh;
+  max-width: 90vw;
+}
+.map-overlay-content {
+  justify-content: center;
+  align-items: center;
+  display: flex;
+  width: 100%;
+  position: absolute;
+  top: 50%;
+}
 
+@media (max-width: 640px)  {
+  .prompt h1 {
+    margin: 2rem 0;
+    font-size: 1.3rem;
+    padding: 0rem 0.5rem;
+    border-radius: 0.25rem;
+  }
+  .map-component {
+    border-radius: 1rem;
+  }
+  .sm-hidden {
+    display: none;
+  }
+}
 #tooltip {
   background-color: #ffffffcc;
   color: #333;
