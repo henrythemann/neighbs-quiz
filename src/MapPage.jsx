@@ -1,24 +1,28 @@
-import React, { useEffect, useState, createRef, forwardRef, useRef, useMemo, useCallback, SetStateAction, Dispatch } from 'react';
+import React, { useEffect, useState, forwardRef, useRef, useMemo, useCallback } from 'react';
 import * as d3 from 'd3';
 import { point, booleanPointInPolygon } from "@turf/turf";
 import rbush from "rbush";
 import { Link } from 'react-router-dom';
 import { useGeolocated } from "react-geolocated";
-import { insidePolygon, toLatLon } from 'geolocation-utils';
-import shuffle from './shuffle';
 import { replacer, getNewShuffledNames } from './MapContainer';
+import { getQuizProgress } from './quizProgress';
 
 const STROKE_COLOR = '#222';
 
-const MapComponent = forwardRef(function MapComponent(props, ref) {
-  const { data, onCityClick, isQuiz, setTooltipText, allPlacesMap, setShowTooltip, setTooltipPosition, tooltipRef } = props;
+const MapComponent = React.memo(forwardRef(function MapComponent(props, ref) {
+  const { data, onCityClick, isQuiz, allPlacesMap, showTooltip, hideTooltip } = props;
   const w = 900;
   const h = 900;
-  const pathGenerator = useMemo(() => {
+  const projectedFeatures = useMemo(() => {
+    const fitFeatures = data.features.filter((feature) => feature.properties?.name !== 'California');
+    const fitData = {
+      ...data,
+      features: fitFeatures.length ? fitFeatures : data.features
+    };
     const projection = d3.geoMercator().scale(1).translate([0, 0]);
     const tmpPath = d3.geoPath().projection(projection);
 
-    const [[x0, y0], [x1, y1]] = tmpPath.bounds(data);
+    const [[x0, y0], [x1, y1]] = tmpPath.bounds(fitData);
     const dx = x1 - x0;
     const dy = y1 - y0;
     const scale = 1 / Math.max(dx / w, dy / h);
@@ -28,7 +32,11 @@ const MapComponent = forwardRef(function MapComponent(props, ref) {
     ];
     projection.scale(scale).translate(translate);
 
-    return d3.geoPath().projection(projection);
+    const pathGenerator = d3.geoPath().projection(projection);
+    return data.features.map((feature) => ({
+      feature,
+      path: pathGenerator(feature)
+    }));
   }, [data]);
 
   const handleSvgClick = useCallback((e) => {
@@ -42,27 +50,20 @@ const MapComponent = forwardRef(function MapComponent(props, ref) {
     if (!isQuiz) {
       const { name, quizzable } = e.target.dataset;
       const { clientX, clientY } = e;
-      if (name && quizzable) {
-        let x = clientX - 5;
-        if (tooltipRef.current.offsetWidth + x + 20 >= window.innerWidth) {
-          x = window.innerWidth - tooltipRef.current.offsetWidth - 20;
-        }
-        setTooltipPosition({ x, y: clientY + 25 });
-        setShowTooltip(true);
-        setTooltipText(name);
+      if (name && quizzable === 'true') {
+        showTooltip(name, clientX, clientY);
       } else {
-        setShowTooltip(false);
-        setTooltipText('');
+        hideTooltip();
       }
     }
-  }, []);
+  }, [hideTooltip, isQuiz, showTooltip]);
 
   return (
     <svg
       ref={ref}
       onClick={handleSvgClick}
       onMouseMove={handleSvgHover}
-      onMouseLeave={() => setShowTooltip(false)}
+      onMouseLeave={hideTooltip}
       viewBox={`0 0 ${w} ${h}`}
       preserveAspectRatio="xMidYMid meet"
       vectorEffect="non-scaling-stroke"
@@ -71,21 +72,20 @@ const MapComponent = forwardRef(function MapComponent(props, ref) {
       className='map-component'
       data-is-quiz={isQuiz}
     >
-      {data.features.map((feature) => {
-        const dPath = pathGenerator(feature);
+      {projectedFeatures.map(({ feature, path }) => {
         const allPlacesMapValue = allPlacesMap.get(feature.properties.name)
 
         return <MapPath
           key={feature.properties.name}
           feature={feature}
-          path={dPath}
+          path={path}
           missed={allPlacesMapValue?.missed}
           guessed={allPlacesMapValue?.guessed}
         />
       })}
     </svg>
   );
-})
+}));
 
 const MapPath = React.memo(function MapPath({
   feature,
@@ -108,29 +108,88 @@ const MapPath = React.memo(function MapPath({
   );
 });
 
+const PlaceName = ({ name, furiganaByName }) => {
+  const furigana = furiganaByName?.[name];
+
+  if (!furigana) {
+    return name;
+  }
+
+  return (
+    <ruby className="place-name-ruby">
+      {name}
+      <rp>(</rp>
+      <rt>{furigana}</rt>
+      <rp>)</rp>
+    </ruby>
+  );
+}
+
+const setTooltipPlaceName = (tooltip, name, furiganaByName) => {
+  const furigana = furiganaByName?.[name];
+
+  if (!furigana) {
+    tooltip.textContent = name;
+    return;
+  }
+
+  const ruby = document.createElement('ruby');
+  ruby.className = 'place-name-ruby';
+  ruby.append(name);
+
+  const openFallback = document.createElement('rp');
+  openFallback.textContent = '(';
+  ruby.append(openFallback);
+
+  const reading = document.createElement('rt');
+  reading.textContent = furigana;
+  ruby.append(reading);
+
+  const closeFallback = document.createElement('rp');
+  closeFallback.textContent = ')';
+  ruby.append(closeFallback);
+
+  tooltip.replaceChildren(ruby);
+}
+
 export default function MapPage(props) {
   const mapRef = useRef(null);
-  const { data, db, allPlacesNames, setAllPlacesNames, allPlacesMap, setAllPlacesMap, quizIndex, setQuizIndex, isQuiz, mapName, numCorrect, setNumCorrect } = props;
-  const oppositeMapName = mapName === 'sf' ? 'bay' : 'sf';
-  const [showTooltip, setShowTooltip] = useState(false);
-  const [showAbout, setShowAbout] = useState(false);
-  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
-  const [tooltipText, setTooltipText] = useState('');
-  const [finishedState, setFinishedState] = useState(false);
+  const tooltipRef = useRef(null);
+  const tooltipTextRef = useRef('');
+  const { data, db, allPlacesNames, setAllPlacesNames, allPlacesMap, setAllPlacesMap, quizIndex, setQuizIndex, isQuiz, mapName, mapConfig, mapOptions, numCorrect, setNumCorrect, ui } = props;
+  const { areaName, quizTypePlural, quizTypeSingular, locationLabel, searchQuerySuffix, furiganaByName } = mapConfig;
+  const otherMapOptions = mapOptions.filter((option) => option.name !== mapName);
+  const getMapOptionLabel = useCallback((option) => {
+    return option.labels?.[ui.locale] || option.label;
+  }, [ui.locale]);
+  const supportsLocationLookup = Boolean(data.spatialIndex);
   const [userLocation, setUserLocation] = useState('');
   const { coords, isGeolocationAvailable, isGeolocationEnabled } =
   useGeolocated({
     positionOptions: {
       enableHighAccuracy: true,
     },
+    suppressLocationOnMount: isQuiz || !supportsLocationLookup,
     userDecisionTimeout: 1000,
   });
-  const { latitude: lat, longitude: lon, accuracy } = coords || {};
+  const { latitude: lat, longitude: lon } = coords || {};
 
-  const findFeatureContainingPoint = (lat, lon, spatialIndex) => {
+  const spatialIndex = useMemo(() => {
+    if (!data.spatialIndex) {
+      return null;
+    }
+    const index = new rbush();
+    index.fromJSON(data.spatialIndex);
+    return index;
+  }, [data]);
+
+  const findFeatureContainingPoint = useCallback((lat, lon) => {
+    if (!spatialIndex) {
+      return null;
+    }
     const pt = point([lon, lat]);
     const candidates = spatialIndex.search({ minX: lon, minY: lat, maxX: lon, maxY: lat });
-    
+
     for (const candidate of candidates) {
       const feature = data.features[candidate.id];
       if (booleanPointInPolygon(pt, feature)) {
@@ -138,56 +197,79 @@ export default function MapPage(props) {
       }
     }
     return null;
-  };
-  
+  }, [data, spatialIndex]);
+
   useEffect(() => {
-    if (lat && lon) {
-      const spatialIndex = new rbush();
-      spatialIndex.fromJSON(data.spatialIndex);
-      const feature = findFeatureContainingPoint(lat, lon, spatialIndex);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      const feature = findFeatureContainingPoint(lat, lon);
       setUserLocation(feature?.properties?.name || '');
-      }
-  }, [lat, lon, data]);
+    }
+  }, [findFeatureContainingPoint, lat, lon]);
 
-  let areaName, quizTypePlural, quizTypeSingular = '';
-  if (mapName === 'bay') {
-    areaName = 'the Bay';
-    quizTypePlural = 'cities';
-    quizTypeSingular = 'city';
-  } else if (mapName === 'sf') {
-    areaName = 'SF';
-    quizTypePlural = 'neighborhoods';
-    quizTypeSingular = 'neighborhood';
-  }
-  const tooltipRef = useRef();
+  const hideTooltip = useCallback(() => {
+    if (tooltipRef.current) {
+      tooltipRef.current.style.display = 'none';
+    }
+  }, []);
 
-  const updateQuizIndex = async (val) => {
+  const showMapTooltip = useCallback((name, clientX, clientY) => {
+    const tooltip = tooltipRef.current;
+    if (!tooltip) {
+      return;
+    }
+
+    if (tooltipTextRef.current !== name) {
+      tooltipTextRef.current = name;
+      setTooltipPlaceName(tooltip, name, furiganaByName);
+    }
+
+    tooltip.style.display = 'block';
+    const tooltipWidth = tooltip.offsetWidth;
+    let x = clientX - 5;
+    if (tooltipWidth + x + 20 >= window.innerWidth) {
+      x = window.innerWidth - tooltipWidth - 20;
+    }
+    tooltip.style.left = `${Math.max(0, x)}px`;
+    tooltip.style.top = `${clientY + 25}px`;
+  }, [furiganaByName]);
+
+  useEffect(() => {
+    hideTooltip();
+  }, [hideTooltip, isQuiz, mapName]);
+
+  const quizProgress = useMemo(
+    () => getQuizProgress(allPlacesNames, allPlacesMap, quizIndex),
+    [allPlacesMap, allPlacesNames, quizIndex]
+  );
+  const { currentQuizIndex, currentQuizName, placesLeft, answeredCount } = quizProgress;
+  const isFinished = isQuiz && allPlacesNames.length > 0 && placesLeft === 0;
+
+  const updateQuizIndex = useCallback((val) => {
     setQuizIndex(val);
     db.quizIndex.put({
       quizIndex: val,
       id: mapName
     })
-  }
+  }, [db, mapName, setQuizIndex]);
 
-  const updateAllPlacesNames = async (val) => {
+  const updateAllPlacesNames = useCallback((val) => {
     setAllPlacesNames(val);
     db.allPlacesNames.put({
       names: val,
       id: mapName
     })
-  }
+  }, [db, mapName, setAllPlacesNames]);
 
-  const updateAllPlacesMap = async (val) => {
+  const updateAllPlacesMap = useCallback((val) => {
     setAllPlacesMap(val);
     db.allPlacesMap.put({
       value: JSON.stringify(val, replacer),
       id: mapName
     })
-  }
+  }, [db, mapName, setAllPlacesMap]);
 
-  const resetBoard = () => {
+  const resetBoard = useCallback(() => {
     if (isQuiz) {
-      setFinishedState(false);
       updateQuizIndex(0);
       setNumCorrect(0);
       const newArrangement = getNewShuffledNames(data);
@@ -195,13 +277,7 @@ export default function MapPage(props) {
       updateAllPlacesMap(new Map());
       // removeTooltips();
     }
-  }
-
-  useEffect(() => {
-    if (!isQuiz) {
-      setFinishedState(false);
-    }
-  }, [isQuiz]);
+  }, [data, isQuiz, setNumCorrect, updateAllPlacesMap, updateAllPlacesNames, updateQuizIndex]);
 
   function skip() {
     // if (neighbToFind) {
@@ -233,10 +309,19 @@ export default function MapPage(props) {
   //   }
   // }, [mapRef, isQuiz]);
 
+  const nextNeighb = useCallback(() => {
+    updateQuizIndex(
+      Math.min(
+        Math.max(quizIndex, currentQuizIndex + 1),
+        allPlacesNames.length
+      )
+    );
+  }, [allPlacesNames.length, currentQuizIndex, quizIndex, updateQuizIndex]);
+
   const onCityClick = useCallback((city) => {
     if (!isQuiz) {
       const newTab = window.open(
-        `https://www.google.com/search?q=${city || ''}${mapName == 'sf' ? '+neighborhood+san+francisco' : ', California'}`,
+        `https://www.google.com/search?q=${encodeURIComponent(`${city || ''}${searchQuerySuffix}`)}`,
         '_blank'
       );
       if (newTab) {
@@ -244,35 +329,22 @@ export default function MapPage(props) {
       }
       return;
     } else {
-      if (allPlacesMap.get(city)?.guessed)
+      if (!currentQuizName || allPlacesMap.get(city)?.guessed)
         return;
       const newMap = new Map(allPlacesMap);
-      if (city !== allPlacesNames[quizIndex]) {
-        newMap.set(allPlacesNames[quizIndex], { 'missed': true, 'guessed': true });
+      if (city !== currentQuizName) {
+        newMap.set(currentQuizName, { 'missed': true, 'guessed': true });
       } else {
-        setNumCorrect(numCorrect + 1);
+        setNumCorrect((current) => current + 1);
         newMap.set(city, { 'missed': false, 'guessed': true });
       }
-      nextNeighb();
       updateAllPlacesMap(newMap);
+      nextNeighb();
     }
-  }, [allPlacesNames, quizIndex, isQuiz]);
-
-  const nextNeighb = () => {
-    updateQuizIndex(quizIndex + 1);
-    if (quizIndex === allPlacesNames.length - 1) {
-      // resetBoard();
-      setFinishedState(true);
-    } else {
-      db.allPlacesMap.put({
-        value: JSON.stringify(allPlacesMap, replacer),
-        id: mapName
-      })
-    }
-  }
+  }, [allPlacesMap, currentQuizName, isQuiz, nextNeighb, searchQuerySuffix, setNumCorrect, updateAllPlacesMap]);
 
   const GameMode = () => {
-    const score = Math.round((numCorrect) / (quizIndex) * 100 || 0);
+    const score = Math.round((numCorrect) / (answeredCount) * 100 || 0);
     let scoreColor = 'inherit';
     if (score > 0) {
       const solid_red_at = 50;
@@ -285,27 +357,27 @@ export default function MapPage(props) {
 
     return (
       <div className="pure-u-1 pure-u-md-1-3">
-        {true && <div style={{
+        <div style={{
           display: 'grid',
-          gridTemplateColumns: `1fr 1fr ${!finishedState ? '1fr' : ''}`,
+          gridTemplateColumns: `1fr 1fr ${!isFinished ? '1fr' : ''}`,
           flexDirection: 'row',
           justifyContent: 'space-around',
           alignItems: 'center',
 
         }}>
-          <div className='sm-hidden' style={{display: 'flex', 'justifyContent': 'center', alignItems: 'center', gap: '0.25rem'}}>Your score: <span style={{ color: scoreColor, fontWeight: 'bold', fontSize: '1.5rem' }}>{score}%</span></div>
-          <div>{allPlacesNames.length - quizIndex} <span className='sm-hidden'>{allPlacesNames.length - quizIndex != 1 ? quizTypePlural : quizTypeSingular}</span> left</div>
-          {!finishedState && (
-            <div><button type="button" onClick={skip}>Skip<span className='sm-hidden'> and come back later</span></button></div>
+          <div className='sm-hidden' style={{display: 'flex', 'justifyContent': 'center', alignItems: 'center', gap: '0.25rem'}}>{ui.scoreLabel} <span style={{ color: scoreColor, fontWeight: 'bold', fontSize: '1.5rem' }}>{score}%</span></div>
+          <div>{ui.placesLeft({ count: placesLeft, pluralLabel: quizTypePlural, singularLabel: quizTypeSingular })}</div>
+          {!isFinished && (
+            <div><button type="button" onClick={skip}>{ui.skipButton}<span className='sm-hidden'>{ui.skipDetails}</span></button></div>
           )}
-        </div>}
+        </div>
       </div>
     )
   }
 
   const BottomRow = () => (
     <div style={{ marginTop: '0.75rem', width: '100%' }}>
-      <span>Having trouble? <Link to={`/${mapName}/location`}>Quit the quiz and learn the {quizTypePlural}</Link></span>
+      <span>{ui.troublePrefix} <Link to={`/${mapName}/location`}>{ui.quitQuiz({ quizTypePlural })}</Link></span>
     </div>
   )
 
@@ -313,14 +385,14 @@ export default function MapPage(props) {
     <div>
       {!isQuiz && (
         <div>
-          {!isGeolocationEnabled && <span>Please enable geolocation to show your location in the {mapName == 'sf' ? 'city' : 'Bay'}.</span>}
-          {!isGeolocationAvailable && <span>Geolocation is not available.</span>}
+          {supportsLocationLookup && !isGeolocationEnabled && <span>{ui.enableGeolocation({ locationLabel })}</span>}
+          {supportsLocationLookup && !isGeolocationAvailable && <span>{ui.geolocationUnavailable}</span>}
         </div>
       )}
       {!isQuiz && (
         <>
           <div>
-            <span>Think you know {areaName}? <Link to={`/${mapName}/quiz`}>Take our {quizTypePlural} quiz</Link></span>
+            <span>{ui.knowPrompt({ areaName, quizTypePlural })}<Link to={`/${mapName}/quiz`}>{ui.takeQuiz({ quizTypePlural })}</Link></span>
           </div>
         </>
       )}
@@ -331,19 +403,31 @@ export default function MapPage(props) {
           </div>
         )}
         <div className="map-wrapper">
-          {(!isQuiz && userLocation) && <div style={{fontSize: '1rem', top: '-0.5rem', position: 'absolute', left: '50%', transform: 'translateX(-50%)'}}>You're in</div>}
+          {(!isQuiz && userLocation) && <div style={{fontSize: '1rem', top: '-0.5rem', position: 'absolute', left: '50%', transform: 'translateX(-50%)'}}>{ui.currentLocationPrefix}</div>}
           {(isQuiz || userLocation) && (
-            <div className='prompt'><h1>{isQuiz ? (finishedState ? 'Congrats!' : allPlacesNames[quizIndex]) : userLocation}</h1></div>
+            <div className='prompt'>
+              <h1>
+                {isQuiz
+                  ? (isFinished ? ui.congrats : currentQuizName ? <PlaceName name={currentQuizName} furiganaByName={furiganaByName} /> : ui.loading)
+                  : <PlaceName name={userLocation} furiganaByName={furiganaByName} />}
+              </h1>
+            </div>
           )}
           <div
             className='map-overlay'
-            style={{ display: finishedState ? 'block' : 'none' }}
+            style={{ display: isFinished ? 'block' : 'none' }}
           >
             <div className='map-overlay-content'>
               {/* {score <= 50 && (
                 `Oof, ${score}%? Are you a tourist or something?`
               )} */}
-            <button className='lg-styled-button' onClick={resetBoard}>Restart?</button>
+            <button className='lg-styled-button' onClick={resetBoard}>{ui.restart}</button>
+            {otherMapOptions.map((option) => (
+              <React.Fragment key={option.name}>
+                {ui.or}
+                <Link className='lg-styled-button' to={`/${option.name}/quiz`}>{ui.tryMap({ label: getMapOptionLabel(option) })}</Link>
+              </React.Fragment>
+            ))}
             </div>
           </div>
           <MapComponent
@@ -351,10 +435,8 @@ export default function MapPage(props) {
             data={data}
             onCityClick={onCityClick}
             isQuiz={isQuiz}
-            setTooltipText={setTooltipText}
-            setShowTooltip={setShowTooltip}
-            setTooltipPosition={setTooltipPosition}
-            tooltipRef={tooltipRef}
+            showTooltip={showMapTooltip}
+            hideTooltip={hideTooltip}
             allPlacesMap={allPlacesMap}
           />
         </div>
@@ -374,12 +456,10 @@ export default function MapPage(props) {
         style={{
           position: 'absolute',
           'zIndex': 10,
-          visibility: (!isQuiz && showTooltip) ? 'visible' : 'hidden',
-          top: tooltipPosition.y + 'px',
-          left: tooltipPosition.x + 'px',
-        }}>
-        {tooltipText}
-      </div>
+          display: 'none',
+          paddingTop: '10.25rem',
+        }}
+      />
       <hr />
       <div style={{
         display: 'flex',
@@ -388,33 +468,19 @@ export default function MapPage(props) {
         alignItems: 'center',
         marginBottom: '0.6rem'
       }}>
-        <button style={{}} onClick={() => setFinishedState(prev => !prev)}>About</button>
-        {/* <button style={{}} onClick={() => setShowAbout(prev => !prev)}>About</button> */}
-        <Link to={`/${oppositeMapName}/${isQuiz ? 'quiz' : 'location'}`} style={{}}>Switch to {mapName == 'sf' ? 'Bay Area' : 'SF'}</Link>
+        <nav className="map-switcher" aria-label={ui.switchMapsLabel}>
+          {mapOptions.map((option) => (
+            option.name === mapName ? (
+              <span key={option.name} aria-current="page">{getMapOptionLabel(option)}</span>
+            ) : (
+              <Link key={option.name} to={`/${option.name}/${isQuiz ? 'quiz' : 'location'}`}>{getMapOptionLabel(option)}</Link>
+            )
+          ))}
+        </nav>
         {isQuiz && (
-          <button type="button" onClick={resetBoard} style={{}} id="start-game-btn">Restart</button>
+          <button type="button" onClick={resetBoard} style={{}} id="start-game-btn">{ui.restart}</button>
         )}
       </div>
-      {showAbout && (
-        <div style={{ textAlign: 'left', margin: '0 1rem' }}>
-          {!isQuiz && (
-            <p>This page will determine which neighborhood of San Francisco you are currently in.  You'll need to be in the city boundaries of San Francisco for this page to be useful for you. If you're not, you can still test your knowledge of the 117 neighborhoods in San Francisco on the <Link to={`/${mapName}/quiz`}>quiz page</Link></p>
-          )}
-          <p>No APIs were harmed in the making of this app. Your location is used solely to determine where you are in the city. Your location data never leaves your browser, and is never shared with anyone, period. Your visit is logged to Google Analytics, simply so I can know how popular this app gets, if it ever does.</p>
-          <a href='https://github.com/codeocelot/neighbs-quiz'>Github Repo</a>
-          <section>
-            <h3>Credits</h3>
-            <p>There are many unsung heros who publish their hard work with little recognition and without this project would never exist. Among them:</p>
-            <ul>
-              <li>The City of San Francisco, and in particular, the lovely folks at <a href="https://datasf.org/opendata/">DataSF</a> for publishing a <a href="https://data.sfgov.org/Geographic-Locations-and-Boundaries/SF-Find-Neighborhoods/pty2-tcw4">list</a> of neighborhood boundaries.</li>
-              <li><a href="https://github.com/d3/d3">d3</a></li>
-              <li><a target="blank" rel="noreferrer noopener" href="https://bitbucket.org/teqplay/geolocation-utils#readme">geolocation-utils</a></li>
-              <li><a target="blank" rel="noreferrer noopener" href="https://github.com/no23reason/react-geolocated">react-geolocated</a></li>
-              <li><a target="blank" rel="noreferrer noopener" href="https://github.com/DudaGod/polygons-intersect#readme">polygons-intersect</a></li>
-            </ul>
-          </section>
-        </div>
-      )}
     </div>
   );
 }

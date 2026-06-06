@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useGeolocated } from "react-geolocated";
 import { insidePolygon, toLatLon } from 'geolocation-utils';
@@ -24,7 +24,7 @@ function GeolocationIsNotEnabled() {
   </div>)
 }
 
-const Geolocated = (props) => {
+const Geolocated = () => {
   const { coords, isGeolocationAvailable, isGeolocationEnabled } =
     useGeolocated({
       positionOptions: {

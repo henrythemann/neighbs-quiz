@@ -1,7 +1,5 @@
-import React from 'react';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import './App.scss';
-import MapPage from './MapPage';
 import { MapContainer } from './MapContainer';
 import RedirectComponent from './RedirectComponent';
 
