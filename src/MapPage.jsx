@@ -280,10 +280,9 @@ export default function MapPage(props) {
   }, [data, isQuiz, setNumCorrect, updateAllPlacesMap, updateAllPlacesNames, updateQuizIndex]);
 
   function skip() {
-    // if (neighbToFind) {
-    //   setNeighbToFind(remainingNeighbs[0]);
-    //   setRemainingNeighbs(remainingNeighbs.slice(1).concat(neighbToFind));
-    // }
+    if (currentQuizName) {
+      nextNeighb();
+    }
   }
 
   // useEffect(() => {
