@@ -406,7 +406,7 @@ export default function MapPage(props) {
           {(!isQuiz && userLocation) && <div style={{fontSize: '1rem', top: '-0.5rem', position: 'absolute', left: '50%', transform: 'translateX(-50%)'}}>{ui.currentLocationPrefix}</div>}
           {(isQuiz || userLocation) && (
             <div className='prompt'>
-              <h1>
+              <h1 style={{ paddingTop: furiganaByName ? '1.25rem' : '0rem' }}>
                 {isQuiz
                   ? (isFinished ? ui.congrats : currentQuizName ? <PlaceName name={currentQuizName} furiganaByName={furiganaByName} /> : ui.loading)
                   : <PlaceName name={userLocation} furiganaByName={furiganaByName} />}
@@ -457,7 +457,7 @@ export default function MapPage(props) {
           position: 'absolute',
           'zIndex': 10,
           display: 'none',
-          paddingTop: '10.25rem',
+          paddingTop: furiganaByName ? '1rem' : '0.5rem',
         }}
       />
       <hr />

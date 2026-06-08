@@ -113,7 +113,7 @@ const MAP_CONFIGS = {
     loadData: () => loadJsonAsset(prefecturesDataUrl),
     label: '日本',
     labels: {
-      en: 'Japan',
+      en: 'Japan Prefectures',
       ja: '日本',
     },
     areaName: '日本',
