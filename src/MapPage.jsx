@@ -6,20 +6,12 @@ import { Link } from 'react-router-dom';
 import { useGeolocated } from "react-geolocated";
 import { replacer, getNewShuffledNames } from './MapContainer';
 import { getQuizProgress } from './quizProgress';
+import { getAcceptedQuizAnswers, normalizeQuizAnswer } from './quizAnswers';
 
 const STROKE_COLOR = '#222';
 const QUIZ_DIRECTIONS = {
   CLICK_PLACE: 'click-place',
   TYPE_NAME: 'type-name',
-};
-
-const normalizeQuizAnswer = (value, locale) => {
-  return `${value}`
-    .normalize('NFKC')
-    .trim()
-    .toLocaleLowerCase(locale)
-    .replace(/[\p{P}\p{S}]+/gu, ' ')
-    .replace(/\s+/g, ' ');
 };
 
 const MapComponent = React.memo(forwardRef(function MapComponent(props, ref) {
@@ -176,6 +168,8 @@ export default function MapPage(props) {
     quizTypeSingular,
     quizTargetLabel,
     answerNameLabel,
+    optionalAnswerSuffixes,
+    answerAliasesByName,
     locationLabel,
     searchQuerySuffix,
     furiganaByName,
@@ -409,9 +403,12 @@ export default function MapPage(props) {
       return;
     }
 
-    const normalizedName = normalizeQuizAnswer(currentQuizName, ui.locale);
-    answerCurrentQuizName(normalizedAnswer === normalizedName);
-  }, [answerCurrentQuizName, currentQuizName, isTypingQuiz, typedAnswer, ui.locale]);
+    const acceptedAnswers = getAcceptedQuizAnswers(currentQuizName, ui.locale, {
+      aliases: [answerAliasesByName?.[currentQuizName]].filter(Boolean),
+      optionalSuffixes: optionalAnswerSuffixes,
+    });
+    answerCurrentQuizName(acceptedAnswers.has(normalizedAnswer));
+  }, [answerAliasesByName, answerCurrentQuizName, currentQuizName, isTypingQuiz, optionalAnswerSuffixes, typedAnswer, ui.locale]);
 
   const GameMode = () => {
     const score = Math.round((numCorrect) / (answeredCount) * 100 || 0);
