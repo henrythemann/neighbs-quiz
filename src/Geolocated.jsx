@@ -8,19 +8,19 @@ import { MapContainer } from './MapContainer';
 
 function PleaseEnableGeo() {
   return <div>
-    <span>Please enable geolocation to find your location in the city.</span>
+    <span>Please enable location access to show where you are in the city.</span>
   </div>
 }
 
 function CurrentNeighb({ neighb }) {
   return <div>
-    <span>Current neighborhood {neighb}</span>
+    <span>You are in {neighb}</span>
   </div>
 }
 
 function GeolocationIsNotEnabled() {
   return (<div>
-    <span>Geolocation is not available.</span>
+    <span>Location is not available in this browser.</span>
   </div>)
 }
 

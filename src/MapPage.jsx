@@ -8,21 +8,29 @@ import { replacer, getNewShuffledNames } from './MapContainer';
 import { getQuizProgress } from './quizProgress';
 
 const STROKE_COLOR = '#222';
+const QUIZ_DIRECTIONS = {
+  CLICK_PLACE: 'click-place',
+  TYPE_NAME: 'type-name',
+};
+
+const normalizeQuizAnswer = (value, locale) => {
+  return `${value}`
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase(locale)
+    .replace(/[\p{P}\p{S}]+/gu, ' ')
+    .replace(/\s+/g, ' ');
+};
 
 const MapComponent = React.memo(forwardRef(function MapComponent(props, ref) {
-  const { data, onCityClick, isQuiz, allPlacesMap, showTooltip, hideTooltip } = props;
+  const { data, onCityClick, isQuiz, quizDirection, currentQuizName, allPlacesMap, showTooltip, hideTooltip } = props;
   const w = 900;
   const h = 900;
   const projectedFeatures = useMemo(() => {
-    const fitFeatures = data.features.filter((feature) => feature.properties?.name !== 'California');
-    const fitData = {
-      ...data,
-      features: fitFeatures.length ? fitFeatures : data.features
-    };
     const projection = d3.geoMercator().scale(1).translate([0, 0]);
     const tmpPath = d3.geoPath().projection(projection);
 
-    const [[x0, y0], [x1, y1]] = tmpPath.bounds(fitData);
+    const [[x0, y0], [x1, y1]] = tmpPath.bounds(data);
     const dx = x1 - x0;
     const dy = y1 - y0;
     const scale = 1 / Math.max(dx / w, dy / h);
@@ -71,6 +79,7 @@ const MapComponent = React.memo(forwardRef(function MapComponent(props, ref) {
       stroke={STROKE_COLOR}
       className='map-component'
       data-is-quiz={isQuiz}
+      data-quiz-direction={quizDirection}
     >
       {projectedFeatures.map(({ feature, path }) => {
         const allPlacesMapValue = allPlacesMap.get(feature.properties.name)
@@ -81,6 +90,7 @@ const MapComponent = React.memo(forwardRef(function MapComponent(props, ref) {
           path={path}
           missed={allPlacesMapValue?.missed}
           guessed={allPlacesMapValue?.guessed}
+          isCurrent={isQuiz && quizDirection === QUIZ_DIRECTIONS.TYPE_NAME && feature.properties.name === currentQuizName}
         />
       })}
     </svg>
@@ -91,7 +101,8 @@ const MapPath = React.memo(function MapPath({
   feature,
   path,
   missed,
-  guessed
+  guessed,
+  isCurrent
 }) {
   return (
     <path
@@ -101,6 +112,7 @@ const MapPath = React.memo(function MapPath({
       data-quizzable={!feature.properties.not_quizzable}
       data-guessed={guessed}
       data-correct={!missed}
+      data-current={isCurrent}
       id={feature.properties.name}
       pointerEvents="all"
       stroke={STROKE_COLOR}
@@ -156,14 +168,28 @@ export default function MapPage(props) {
   const mapRef = useRef(null);
   const tooltipRef = useRef(null);
   const tooltipTextRef = useRef('');
+  const answerInputRef = useRef(null);
   const { data, db, allPlacesNames, setAllPlacesNames, allPlacesMap, setAllPlacesMap, quizIndex, setQuizIndex, isQuiz, mapName, mapConfig, mapOptions, numCorrect, setNumCorrect, ui } = props;
-  const { areaName, quizTypePlural, quizTypeSingular, locationLabel, searchQuerySuffix, furiganaByName } = mapConfig;
+  const {
+    areaName,
+    quizTypePlural,
+    quizTypeSingular,
+    quizTargetLabel,
+    answerNameLabel,
+    locationLabel,
+    searchQuerySuffix,
+    furiganaByName,
+  } = mapConfig;
+  const quizCopyLabels = { quizTypePlural, quizTypeSingular, quizTargetLabel, answerNameLabel };
   const otherMapOptions = mapOptions.filter((option) => option.name !== mapName);
   const getMapOptionLabel = useCallback((option) => {
     return option.labels?.[ui.locale] || option.label;
   }, [ui.locale]);
   const supportsLocationLookup = Boolean(data.spatialIndex);
   const [userLocation, setUserLocation] = useState('');
+  const [quizDirection, setQuizDirection] = useState(QUIZ_DIRECTIONS.CLICK_PLACE);
+  const [typedAnswer, setTypedAnswer] = useState('');
+  const isTypingQuiz = isQuiz && quizDirection === QUIZ_DIRECTIONS.TYPE_NAME;
   const { coords, isGeolocationAvailable, isGeolocationEnabled } =
   useGeolocated({
     positionOptions: {
@@ -243,6 +269,16 @@ export default function MapPage(props) {
   );
   const { currentQuizIndex, currentQuizName, placesLeft, answeredCount } = quizProgress;
   const isFinished = isQuiz && allPlacesNames.length > 0 && placesLeft === 0;
+  const promptNeedsRubyPadding = Boolean(furiganaByName && (!isQuiz || !isTypingQuiz));
+
+  useEffect(() => {
+    if (!isTypingQuiz || isFinished || !currentQuizName) {
+      return;
+    }
+
+    setTypedAnswer('');
+    answerInputRef.current?.focus();
+  }, [currentQuizName, isFinished, isTypingQuiz]);
 
   const updateQuizIndex = useCallback((val) => {
     setQuizIndex(val);
@@ -275,9 +311,19 @@ export default function MapPage(props) {
       const newArrangement = getNewShuffledNames(data);
       updateAllPlacesNames(newArrangement);
       updateAllPlacesMap(new Map());
+      setTypedAnswer('');
       // removeTooltips();
     }
   }, [data, isQuiz, setNumCorrect, updateAllPlacesMap, updateAllPlacesNames, updateQuizIndex]);
+
+  const switchQuizDirection = useCallback(() => {
+    setQuizDirection((currentDirection) => (
+      currentDirection === QUIZ_DIRECTIONS.CLICK_PLACE
+        ? QUIZ_DIRECTIONS.TYPE_NAME
+        : QUIZ_DIRECTIONS.CLICK_PLACE
+    ));
+    resetBoard();
+  }, [resetBoard]);
 
   function skip() {
     if (currentQuizName) {
@@ -317,6 +363,20 @@ export default function MapPage(props) {
     );
   }, [allPlacesNames.length, currentQuizIndex, quizIndex, updateQuizIndex]);
 
+  const answerCurrentQuizName = useCallback((isCorrect) => {
+    if (!currentQuizName) {
+      return;
+    }
+
+    const newMap = new Map(allPlacesMap);
+    newMap.set(currentQuizName, { 'missed': !isCorrect, 'guessed': true });
+    if (isCorrect) {
+      setNumCorrect((current) => current + 1);
+    }
+    updateAllPlacesMap(newMap);
+    nextNeighb();
+  }, [allPlacesMap, currentQuizName, nextNeighb, setNumCorrect, updateAllPlacesMap]);
+
   const onCityClick = useCallback((city) => {
     if (!isQuiz) {
       const newTab = window.open(
@@ -328,19 +388,30 @@ export default function MapPage(props) {
       }
       return;
     } else {
+      if (isTypingQuiz) {
+        return;
+      }
       if (!currentQuizName || allPlacesMap.get(city)?.guessed)
         return;
-      const newMap = new Map(allPlacesMap);
-      if (city !== currentQuizName) {
-        newMap.set(currentQuizName, { 'missed': true, 'guessed': true });
-      } else {
-        setNumCorrect((current) => current + 1);
-        newMap.set(city, { 'missed': false, 'guessed': true });
-      }
-      updateAllPlacesMap(newMap);
-      nextNeighb();
+      answerCurrentQuizName(city === currentQuizName);
     }
-  }, [allPlacesMap, currentQuizName, isQuiz, nextNeighb, searchQuerySuffix, setNumCorrect, updateAllPlacesMap]);
+  }, [allPlacesMap, answerCurrentQuizName, currentQuizName, isQuiz, isTypingQuiz, searchQuerySuffix]);
+
+  const submitTypedAnswer = useCallback((event) => {
+    event.preventDefault();
+    if (!isTypingQuiz || !currentQuizName) {
+      return;
+    }
+
+    const normalizedAnswer = normalizeQuizAnswer(typedAnswer, ui.locale);
+    if (!normalizedAnswer) {
+      answerInputRef.current?.focus();
+      return;
+    }
+
+    const normalizedName = normalizeQuizAnswer(currentQuizName, ui.locale);
+    answerCurrentQuizName(normalizedAnswer === normalizedName);
+  }, [answerCurrentQuizName, currentQuizName, isTypingQuiz, typedAnswer, ui.locale]);
 
   const GameMode = () => {
     const score = Math.round((numCorrect) / (answeredCount) * 100 || 0);
@@ -356,16 +427,16 @@ export default function MapPage(props) {
 
     return (
       <div className="pure-u-1 pure-u-md-1-3">
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: `1fr 1fr ${!isFinished ? '1fr' : ''}`,
-          flexDirection: 'row',
-          justifyContent: 'space-around',
-          alignItems: 'center',
-
-        }}>
+        <div className="quiz-status-row">
           <div className='sm-hidden' style={{display: 'flex', 'justifyContent': 'center', alignItems: 'center', gap: '0.25rem'}}>{ui.scoreLabel} <span style={{ color: scoreColor, fontWeight: 'bold', fontSize: '1.5rem' }}>{score}%</span></div>
           <div>{ui.placesLeft({ count: placesLeft, pluralLabel: quizTypePlural, singularLabel: quizTypeSingular })}</div>
+          <div>
+            <button type="button" onClick={switchQuizDirection}>
+              {quizDirection === QUIZ_DIRECTIONS.CLICK_PLACE
+                ? ui.switchToTypeQuiz({ quizTypePlural })
+                : ui.switchToClickQuiz({ quizTypePlural })}
+            </button>
+          </div>
           {!isFinished && (
             <div><button type="button" onClick={skip}>{ui.skipButton}<span className='sm-hidden'>{ui.skipDetails}</span></button></div>
           )}
@@ -405,11 +476,31 @@ export default function MapPage(props) {
           {(!isQuiz && userLocation) && <div style={{fontSize: '1rem', top: '-0.5rem', position: 'absolute', left: '50%', transform: 'translateX(-50%)'}}>{ui.currentLocationPrefix}</div>}
           {(isQuiz || userLocation) && (
             <div className='prompt'>
-              <h1 style={{ paddingTop: furiganaByName ? '1.25rem' : '0rem' }}>
+              <h1 style={{ paddingTop: promptNeedsRubyPadding ? '1.25rem' : '0rem' }}>
                 {isQuiz
-                  ? (isFinished ? ui.congrats : currentQuizName ? <PlaceName name={currentQuizName} furiganaByName={furiganaByName} /> : ui.loading)
+                  ? (isFinished
+                    ? ui.congrats
+                    : isTypingQuiz
+                      ? (currentQuizName ? ui.nameHighlightedPrompt(quizCopyLabels) : ui.loading)
+                      : currentQuizName ? <PlaceName name={currentQuizName} furiganaByName={furiganaByName} /> : ui.loading)
                   : <PlaceName name={userLocation} furiganaByName={furiganaByName} />}
               </h1>
+              {isTypingQuiz && !isFinished && currentQuizName && (
+                <form className="quiz-answer-form" onSubmit={submitTypedAnswer}>
+                  <input
+                    ref={answerInputRef}
+                    type="text"
+                    value={typedAnswer}
+                    onChange={(event) => setTypedAnswer(event.target.value)}
+                    aria-label={ui.answerInputLabel(quizCopyLabels)}
+                    placeholder={ui.answerInputPlaceholder(quizCopyLabels)}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck="false"
+                  />
+                  <button type="submit">{ui.submitAnswer}</button>
+                </form>
+              )}
             </div>
           )}
           <div
@@ -434,6 +525,8 @@ export default function MapPage(props) {
             data={data}
             onCityClick={onCityClick}
             isQuiz={isQuiz}
+            quizDirection={quizDirection}
+            currentQuizName={currentQuizName}
             showTooltip={showMapTooltip}
             hideTooltip={hideTooltip}
             allPlacesMap={allPlacesMap}
